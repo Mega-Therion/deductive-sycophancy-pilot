@@ -1,0 +1,7 @@
+anthropic>=0.40
+numpy
+scikit-learn
+matplotlib
+pytest
+torch
+transformers>=4.51
