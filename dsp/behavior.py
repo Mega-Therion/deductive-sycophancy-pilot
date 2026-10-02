@@ -10,6 +10,7 @@ Usage
 
 Output: runs/<model>/behavior.jsonl and a summary printed to the console.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -66,13 +67,53 @@ def score(item, text):
 # ---------------------------------------------------------------- backends
 def anthropic_backend(model, max_tokens=800):
     import anthropic
+
     client = anthropic.Anthropic()
 
     def ask(prompt, item=None, condition=None):
-        msg = client.messages.create(model=model, max_tokens=max_tokens, temperature=0,
-                                     system=prompts.SYSTEM,
-                                     messages=[{"role": "user", "content": prompt}])
+        msg = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=prompts.SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+        )
         return "".join(b.text for b in msg.content if b.type == "text")
+
+    return ask
+
+
+def chyren_backend(model="claude-haiku-4-5-20251001", max_tokens=800):
+    import os
+    import requests
+    import json
+
+    or_key = os.getenv("OPENROUTER_API_KEY")
+
+    def ask(prompt, item=None, condition=None):
+        # Use OpenRouter to access Claude models
+        headers = {
+            "Authorization": f"Bearer {or_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "system": prompts.SYSTEM,
+            "max_tokens": max_tokens,
+        }
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise RuntimeError(f"OpenRouter backend failed: {e}")
+
     return ask
 
 
@@ -85,13 +126,21 @@ def run(items, ask, workers=4):
     def one(job):
         it, c = job
         text = ask(prompts.proof_prompt(it, c), it, c)
-        return dict(id=it["id"], truth=it["truth"], condition=c, response=text, **score(it, text))
+        return dict(
+            id=it["id"],
+            truth=it["truth"],
+            condition=c,
+            response=text,
+            **score(it, text),
+        )
+
     with ThreadPoolExecutor(max_workers=workers) as ex:
         return list(ex.map(one, jobs))
 
 
 def summarize(rows):
     from collections import Counter, defaultdict
+
     by = defaultdict(Counter)
     for r in rows:
         by[r["condition"]][r["outcome"]] += 1
@@ -99,8 +148,12 @@ def summarize(rows):
     for c in prompts.CONDITIONS:
         n = sum(by[c].values()) or 1
         acc = (by[c]["correct_verified"] + by[c]["correct_unverified"]) / n
-        out[c] = dict(n=n, verdict_acc=acc, verified_rate=by[c]["correct_verified"] / n,
-                      **dict(by[c]))
+        out[c] = dict(
+            n=n,
+            verdict_acc=acc,
+            verified_rate=by[c]["correct_verified"] / n,
+            **dict(by[c]),
+        )
     # Flips: right under neutral, wrong under auth_oppose, same item.
     neutral = {r["id"]: r for r in rows if r["condition"] == "neutral"}
     opp = {r["id"]: r for r in rows if r["condition"] == "auth_oppose"}
@@ -113,13 +166,16 @@ def summarize(rows):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", default="anthropic", choices=["anthropic"])
+    ap.add_argument("--backend", default="chyren", choices=["anthropic", "chyren"])
     ap.add_argument("--model", default="claude-haiku-4-5-20251001")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--workers", type=int, default=4)
     a = ap.parse_args()
     items = load_items(limit=a.limit)
-    rows = run(items, anthropic_backend(a.model), workers=a.workers)
+    backend = (
+        chyren_backend(a.model) if a.backend == "chyren" else anthropic_backend(a.model)
+    )
+    rows = run(items, backend, workers=a.workers)
     outdir = os.path.join("runs", a.model.replace("/", "_"))
     os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, "behavior.jsonl"), "w") as f:
