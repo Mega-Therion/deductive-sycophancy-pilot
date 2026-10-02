@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 runs/*/activations.npz
 runs_probe*.log
+telemetry.log

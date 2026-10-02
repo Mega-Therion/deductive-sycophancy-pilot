@@ -4,7 +4,7 @@
 
 **What's different here:** every label is checked by the Lean 4 kernel, not by a human rater or another model. Existing sycophancy-in-math work, such as BrokenMath (Petrov, Dekoninck & Vechev, NeurIPS 2025), grades answers with an LLM judge. Here a proof either compiles against a statement the harness wrote, or it doesn't.
 
-Author: R. W. Yett ([ORCID 0009-0001-1303-7190](https://orcid.org/0009-0001-1303-7190)). I designed the experiment and checked every result; the code was written with AI coding assistance under my direction.
+Author: R.W. Yett ([ORCID 0009-0001-1303-7190](https://orcid.org/0009-0001-1303-7190)). The author designed the experiment and checked every result; the code was written with AI coding assistance under the author's direction.
 
 ## What's in the box
 
