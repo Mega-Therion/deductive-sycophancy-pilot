@@ -83,36 +83,44 @@ def anthropic_backend(model, max_tokens=800):
 
 
 def chyren_backend(model="claude-haiku-4-5-20251001", max_tokens=800):
-    import os
-    import requests
+    import subprocess
     import json
 
-    or_key = os.getenv("OPENROUTER_API_KEY")
+    provider = "anthropic" if "claude" in model.lower() else "auto"
 
     def ask(prompt, item=None, condition=None):
-        # Use OpenRouter to access Claude models
-        headers = {
-            "Authorization": f"Bearer {or_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "system": prompts.SYSTEM,
-            "max_tokens": max_tokens,
-        }
+        # Use chyren-say CLI with system prompt prepended
+        full_prompt = f"{prompts.SYSTEM}\n\n{prompt}"
+        cmd = [
+            "chyren-say",
+            "--json",
+            "--provider",
+            provider,
+            "--max-tokens",
+            str(max_tokens),
+            "--temperature",
+            "0",
+            full_prompt,
+        ]
         try:
-            response = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60,
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+            if result.returncode != 0:
+                raise RuntimeError(f"chyren-say failed: {result.stderr}")
+            data = json.loads(result.stdout)
+            # Extract text from Chyren response
+            if isinstance(data, dict) and "response" in data:
+                return data["response"]
+            elif isinstance(data, dict) and "content" in data:
+                return data["content"]
+            else:
+                return str(data)
         except Exception as e:
-            raise RuntimeError(f"OpenRouter backend failed: {e}")
+            raise RuntimeError(f"chyren-say backend failed: {e}")
 
     return ask
 
